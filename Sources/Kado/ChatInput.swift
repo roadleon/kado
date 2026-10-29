@@ -115,8 +115,24 @@ final class SubmitTextView: NSTextView {
     /// 折り返しが変わりうるとき（日本語の変換中や、幅が変わったとき）に呼ぶ
     var onLayoutChange: (() -> Void)?
 
+    /// 文字専用の入力欄は、クリップボードに画像しかないと「ペースト」を押せない状態にする。
+    /// ⌘V はこのメニュー項目を通るので、画像があるときは押せるようにする
+    override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), hasImages(in: .general) { return true }
+        return super.validateUserInterfaceItem(item)
+    }
+
+    /// 画像ファイル → 文字 → 画像の順に見る。表計算の表などは文字と画像の両方を持つので、文字を優先する
     override func paste(_ sender: Any?) {
-        if !attachImages(from: .general) { super.paste(sender) }
+        let pasteboard = NSPasteboard.general
+        let urls = ImageTransfer.imageURLs(in: pasteboard)
+        if !urls.isEmpty {
+            onPasteURLs?(urls)
+        } else if pasteboard.string(forType: .string)?.isEmpty == false {
+            super.paste(sender)
+        } else if !attachImages(from: pasteboard) {
+            super.paste(sender)
+        }
     }
 
     private func hasImages(in pasteboard: NSPasteboard) -> Bool {
