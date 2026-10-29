@@ -7,6 +7,7 @@ struct ChatMessage: Identifiable, Equatable {
     let id = UUID()
     let role: Role
     var text: String
+    var images: [NSImage] = []
     var isError = false
     var isDone = false
 }
@@ -19,6 +20,9 @@ final class ChatStore: ObservableObject {
     @Published private(set) var activity: String?
     @Published private(set) var model: ModelChoice = Settings.model
     @Published var draft = ""
+    @Published private(set) var pendingImages: [ImageAttachment] = []
+    @Published private(set) var notice: String?
+    var captureHandler: (() -> Void)?
     /// 値が変わるたびに入力欄へフォーカスを移す
     @Published private(set) var focusTick = 0
     /// 値が変わるたびに入力欄を空にする（日本語の変換中の文字も消す）
@@ -29,6 +33,10 @@ final class ChatStore: ObservableObject {
     /// 止めた回の数。その回の result が届くまで、出力を捨てる
     private var pendingDiscards = 0
     private(set) var lastActivity = Date()
+    private let imageQueue = DispatchQueue(label: "kado.images", qos: .userInitiated)
+    private var loadingImageCount = 0
+    private var attachmentGeneration = UUID()
+    private var noticeTask: Task<Void, Never>?
 
     // MARK: - 操作
 
@@ -49,11 +57,13 @@ final class ChatStore: ObservableObject {
 
     func send() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !isResponding else { return }
+        guard !text.isEmpty || !pendingImages.isEmpty, !isResponding else { return }
+        let images = pendingImages
+        pendingImages = []
         draft = ""
         lastActivity = Date()
 
-        messages.append(ChatMessage(role: .user, text: text, isDone: true))
+        messages.append(ChatMessage(role: .user, text: text, images: images.map(\.thumbnail), isDone: true))
         messages.append(ChatMessage(role: .assistant, text: ""))
         isResponding = true
         streamedThisTurn = false
@@ -64,7 +74,8 @@ final class ChatStore: ObservableObject {
         }
         guard let session else { return }
         do {
-            try session.send(text)
+            let prompt = text.isEmpty ? L10n.t("この画像について説明して。", "Describe this image.") : text
+            try session.send(prompt, images: images)
         } catch {
             finishLast(with: L10n.t("Claude Code に質問を渡せませんでした。もう一度送ってみてください。", "Couldn’t send your question to Claude Code. Please try again."), isError: true)
             dropSession()
@@ -83,6 +94,11 @@ final class ChatStore: ObservableObject {
         dropSession()
         messages = []
         draft = ""
+        pendingImages = []
+        attachmentGeneration = UUID()
+        loadingImageCount = 0
+        noticeTask?.cancel()
+        notice = nil
         clearTick += 1
         isResponding = false
         startSession()
@@ -110,6 +126,72 @@ final class ChatStore: ObservableObject {
     func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    // MARK: - 画像の添付
+
+    func attach(images: [NSImage]) {
+        attach(loaders: images.map { image in { try ImageAttachment.load(image: image) } })
+    }
+
+    /// 一時ファイルは、読み込みが終わってから呼び出し元で消す。
+    func attach(urls: [URL], completion: (() -> Void)? = nil) {
+        attach(loaders: urls.map { url in { try ImageAttachment.load(url: url) } }, completion: completion)
+    }
+
+    func attach(data: Data) {
+        attach(loaders: [{ try ImageAttachment.load(data: data) }])
+    }
+
+    func removePendingImage(id: UUID) {
+        pendingImages.removeAll { $0.id == id }
+    }
+
+    func requestCapture() {
+        captureHandler?()
+    }
+
+    private func attach(loaders: [() throws -> ImageAttachment], completion: (() -> Void)? = nil) {
+        let available = max(0, 4 - pendingImages.count - loadingImageCount)
+        if loaders.count > available {
+            showNotice(L10n.t("画像は4枚までです", "You can attach up to 4 images"))
+        }
+        let accepted = Array(loaders.prefix(available))
+        guard !accepted.isEmpty else {
+            completion?()
+            return
+        }
+        loadingImageCount += accepted.count
+        let generation = attachmentGeneration
+        imageQueue.async { [weak self] in
+            let results = accepted.map { loader in
+                autoreleasepool { Result { try loader() } }
+            }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    defer { completion?() }
+                    guard let self, self.attachmentGeneration == generation else { return }
+                    self.loadingImageCount -= accepted.count
+                    for result in results {
+                        switch result {
+                        case .success(let image): self.pendingImages.append(image)
+                        case .failure(let error):
+                            self.showNotice((error as? ImageAttachment.Failure ?? .unreadable).notice)
+                        }
+                    }
+                    self.focusTick += 1
+                }
+            }
+        }
+    }
+
+    private func showNotice(_ text: String) {
+        noticeTask?.cancel()
+        notice = text
+        noticeTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(4)) } catch { return }
+            self?.notice = nil
+        }
     }
 
     // MARK: - claude とのやりとり

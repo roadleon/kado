@@ -1,9 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @ObservedObject var store: ChatStore
     var onClose: () -> Void
     @State private var inputContentHeight: CGFloat = 0
+    @State private var dropTargeted = false
+    @State private var inputDropTargeted = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,8 +20,11 @@ struct ChatView: View {
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous)
-                .strokeBorder(Theme.hairline)
+                .strokeBorder(dropTargeted || inputDropTargeted ? Theme.accent : Theme.hairline,
+                              lineWidth: dropTargeted || inputDropTargeted ? 2 : 1)
+                .allowsHitTesting(false)
         )
+        .onDrop(of: [UTType.fileURL, UTType.image], isTargeted: $dropTargeted, perform: attachProviders)
     }
 
     // MARK: - 見出し
@@ -105,6 +111,9 @@ struct ChatView: View {
             Text(L10n.t("Enter で送信　Shift + Enter で改行　⌃⌥M で開閉", "Enter to send · Shift + Enter for a new line · ⌃⌥M to toggle"))
                 .font(Theme.bodySmall)
                 .foregroundStyle(.tertiary)
+            Text(L10n.t("画像は ⌘V・ドラッグ・撮影ボタンで添付できます", "Attach images with ⌘V, drag and drop, or the capture button"))
+                .font(Theme.bodySmall)
+                .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 150)
@@ -113,49 +122,121 @@ struct ChatView: View {
     // MARK: - 入力欄
 
     private var inputArea: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            ZStack(alignment: .topLeading) {
-                if store.draft.isEmpty {
-                    Text(L10n.t("質問を入力", "Ask anything"))
-                        .foregroundStyle(.tertiary)
-                        .padding(.top, 3)
-                        .allowsHitTesting(false)
-                }
-                ChatInput(
-                    text: $store.draft,
-                    contentHeight: $inputContentHeight,
-                    focusTick: store.focusTick,
-                    clearTick: store.clearTick,
-                    onSubmit: { store.send() },
-                    onEscape: onClose
-                )
-                .frame(height: inputHeight)
+        VStack(alignment: .leading, spacing: 4) {
+            if let notice = store.notice {
+                Text(notice)
+                    .font(Theme.bodySmall)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 4)
             }
+            VStack(alignment: .leading, spacing: 6) {
+                if !store.pendingImages.isEmpty {
+                    pendingImageStrip
+                }
+                HStack(alignment: .bottom, spacing: 8) {
+                    IconButton(systemName: "camera.viewfinder", help: L10n.t("画面の一部を撮って添付", "Capture part of the screen")) {
+                        store.requestCapture()
+                    }
+                    ZStack(alignment: .topLeading) {
+                        if store.draft.isEmpty {
+                            Text(L10n.t("質問を入力", "Ask anything"))
+                                .foregroundStyle(.tertiary)
+                                .padding(.top, 3)
+                                .allowsHitTesting(false)
+                        }
+                        ChatInput(
+                            text: $store.draft,
+                            contentHeight: $inputContentHeight,
+                            focusTick: store.focusTick,
+                            clearTick: store.clearTick,
+                            onSubmit: { store.send() },
+                            onEscape: onClose,
+                            onAttachImages: { store.attach(images: $0) },
+                            onAttachURLs: { store.attach(urls: $0) },
+                            onImageDragChange: { inputDropTargeted = $0 }
+                        )
+                        .frame(height: inputHeight)
+                    }
 
-            if store.isResponding {
-                RoundButton(systemName: "stop.fill", enabled: true, help: L10n.t("止める", "Stop")) {
-                    store.stop()
-                }
-            } else {
-                RoundButton(systemName: "arrow.up", enabled: !trimmedDraft.isEmpty, help: L10n.t("送信（Enter）", "Send (Enter)")) {
-                    store.send()
+                    if store.isResponding {
+                        RoundButton(systemName: "stop.fill", enabled: true, help: L10n.t("止める", "Stop")) {
+                            store.stop()
+                        }
+                    } else {
+                        RoundButton(systemName: "arrow.up", enabled: !trimmedDraft.isEmpty || !store.pendingImages.isEmpty, help: L10n.t("送信（Enter）", "Send (Enter)")) {
+                            store.send()
+                        }
+                    }
                 }
             }
+            .padding(.leading, 12)
+            .padding(.trailing, 7)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.primary.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(Theme.hairline)
+                    .allowsHitTesting(false)
+            )
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 7)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.primary.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.hairline)
-        )
         .padding(.horizontal, 10)
         .padding(.bottom, 10)
         .padding(.top, 4)
+    }
+
+    private var pendingImageStrip: some View {
+        HStack(spacing: 8) {
+            ForEach(store.pendingImages) { image in
+                Image(nsImage: image.thumbnail)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        Button {
+                            store.removePendingImage(id: image.id)
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 16, height: 16)
+                                .background(.black.opacity(0.7), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(L10n.t("画像を外す", "Remove image"))
+                        .accessibilityLabel(L10n.t("画像を外す", "Remove image"))
+                    }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// ファイル URL を優先し、同じ画像を二重に添付しない。
+    private func attachProviders(_ providers: [NSItemProvider]) -> Bool {
+        let supported = providers.filter {
+            $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+                || $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+        }
+        for provider in supported {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                provider.loadDataRepresentation(forTypeIdentifier: UTType.fileURL.identifier) { data, _ in
+                    guard let data, let url = URL(dataRepresentation: data, relativeTo: nil),
+                          ImageTransfer.isImageURL(url) else { return }
+                    DispatchQueue.main.async { store.attach(urls: [url]) }
+                }
+            } else {
+                let type = provider.registeredTypeIdentifiers.first {
+                    UTType($0)?.conforms(to: .image) == true
+                } ?? UTType.image.identifier
+                provider.loadDataRepresentation(forTypeIdentifier: type) { data, _ in
+                    DispatchQueue.main.async { store.attach(data: data ?? Data()) }
+                }
+            }
+        }
+        return !supported.isEmpty
     }
 
     private var trimmedDraft: String {
@@ -180,11 +261,26 @@ private struct MessageRow: View {
         case .user:
             HStack {
                 Spacer(minLength: 48)
-                Text(message.text)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 7)
-                    .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .trailing, spacing: 6) {
+                    if !message.images.isEmpty {
+                        HStack(spacing: 5) {
+                            ForEach(Array(message.images.enumerated()), id: \.offset) { _, image in
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(maxWidth: 64, maxHeight: 72)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            }
+                        }
+                    }
+                    if !message.text.isEmpty {
+                        Text(message.text)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(Theme.userBubble, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         case .assistant:
             VStack(alignment: .leading, spacing: 6) {

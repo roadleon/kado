@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var hotKey: HotKey?
     private var idleTimer: Timer?
+    private var captureProcess: Process?
+    private var isCapturing = false
     /// 起動の途中で届いた URL。準備ができてから処理する
     private var pendingURLs: [URL] = []
     private var isReady = false
@@ -46,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if Settings.bubbleVisible { bubble.orderFrontRegardless() }
 
         panel = ChatPanel(store: store, onClose: { [weak self] in self?.hideChat() })
+        store.captureHandler = { [weak self] in self?.captureImage() }
 
         setUpStatusItem()
 
@@ -72,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if captureProcess?.isRunning == true { captureProcess?.terminate() }
         store.shutdown()
     }
 
@@ -103,14 +107,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             case "close": hideChat()
             case "new": newConversation()
             case "ask":
-                let question = URLComponents(url: url, resolvingAgainstBaseURL: false)?
-                    .queryItems?.first { $0.name == "q" }?.value ?? ""
+                let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                let question = items.first { $0.name == "q" }?.value ?? ""
                 if !panel.isVisible { showChat() }
                 // ウェブページなどから勝手に送られないよう、入力欄に入れるだけにする
                 store.fillDraft(question)
-                // 動作確認用：open --env KADO_AUTOSEND=1 で起動したときだけ送信まで行う
+                // 動作確認用：open --env KADO_AUTOSEND=1 で起動したときだけ、image= の画像を添付して送信まで行う
                 if ProcessInfo.processInfo.environment["KADO_AUTOSEND"] == "1" {
-                    store.send()
+                    if let path = items.first(where: { $0.name == "image" })?.value {
+                        store.attach(urls: [URL(fileURLWithPath: path)]) { [weak self] in
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self?.store.send() }
+                        }
+                    } else {
+                        store.send()
+                    }
                 }
             default: toggleChat()
             }
@@ -154,6 +164,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if panel.isVisible {
             panel.position(near: bubble.frame)
         }
+    }
+
+    /// 撮影中だけチャットを隠し、範囲選択の終了を非同期で待つ。
+    private func captureImage() {
+        guard !isCapturing else { return }
+        isCapturing = true
+        hideChat()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("kado-capture-\(UUID().uuidString).png")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+            process.arguments = ["-i", "-x", url.path]
+            process.standardInput = FileHandle.nullDevice
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { [weak self] _ in
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated { self?.finishCapture(at: url) }
+                }
+            }
+            self.captureProcess = process
+            do {
+                try process.run()
+            } catch {
+                self.finishCapture(at: url)
+            }
+        }
+    }
+
+    private func finishCapture(at url: URL) {
+        captureProcess = nil
+        isCapturing = false
+        if FileManager.default.fileExists(atPath: url.path) {
+            store.attach(urls: [url]) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        showChat()
     }
 
     // MARK: - メニューバー

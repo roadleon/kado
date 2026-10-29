@@ -10,6 +10,9 @@ struct ChatInput: NSViewRepresentable {
     var clearTick: Int
     var onSubmit: () -> Void
     var onEscape: () -> Void
+    var onAttachImages: ([NSImage]) -> Void
+    var onAttachURLs: ([URL]) -> Void
+    var onImageDragChange: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -33,6 +36,7 @@ struct ChatInput: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        textView.registerForDraggedTypes([.fileURL] + NSImage.imageTypes.map { NSPasteboard.PasteboardType($0) })
 
         let scrollView = NSScrollView()
         scrollView.documentView = textView
@@ -48,6 +52,9 @@ struct ChatInput: NSViewRepresentable {
         context.coordinator.parent = self
         textView.onSubmit = onSubmit
         textView.onEscape = onEscape
+        textView.onPasteImages = onAttachImages
+        textView.onPasteURLs = onAttachURLs
+        textView.onImageDragChange = onImageDragChange
         textView.onLayoutChange = { [weak coordinator = context.coordinator, weak textView] in
             guard let textView else { return }
             coordinator?.measure(textView)
@@ -102,8 +109,70 @@ struct ChatInput: NSViewRepresentable {
 final class SubmitTextView: NSTextView {
     var onSubmit: (() -> Void)?
     var onEscape: (() -> Void)?
+    var onPasteImages: (([NSImage]) -> Void)?
+    var onPasteURLs: (([URL]) -> Void)?
+    var onImageDragChange: ((Bool) -> Void)?
     /// 折り返しが変わりうるとき（日本語の変換中や、幅が変わったとき）に呼ぶ
     var onLayoutChange: (() -> Void)?
+
+    override func paste(_ sender: Any?) {
+        if !attachImages(from: .general) { super.paste(sender) }
+    }
+
+    private func hasImages(in pasteboard: NSPasteboard) -> Bool {
+        !ImageTransfer.imageURLs(in: pasteboard).isEmpty
+            || pasteboard.canReadObject(forClasses: [NSImage.self], options: nil)
+    }
+
+    private func attachImages(from pasteboard: NSPasteboard) -> Bool {
+        let urls = ImageTransfer.imageURLs(in: pasteboard)
+        if !urls.isEmpty {
+            onPasteURLs?(urls)
+            return true
+        }
+        let images = ImageTransfer.images(in: pasteboard)
+        guard !images.isEmpty else { return false }
+        onPasteImages?(images)
+        return true
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if hasImages(in: sender.draggingPasteboard) {
+            onImageDragChange?(true)
+            return .copy
+        }
+        return super.draggingEntered(sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        if hasImages(in: sender.draggingPasteboard) {
+            onImageDragChange?(true)
+            return .copy
+        }
+        onImageDragChange?(false)
+        return super.draggingUpdated(sender)
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        onImageDragChange?(false)
+        super.draggingExited(sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        if hasImages(in: sender.draggingPasteboard) { return true }
+        return super.prepareForDragOperation(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        onImageDragChange?(false)
+        if attachImages(from: sender.draggingPasteboard) { return true }
+        return super.performDragOperation(sender)
+    }
+
+    override func concludeDragOperation(_ sender: NSDraggingInfo?) {
+        onImageDragChange?(false)
+        super.concludeDragOperation(sender)
+    }
 
     override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
         super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)

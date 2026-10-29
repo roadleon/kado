@@ -130,10 +130,22 @@ final class ClaudeSession {
         self.stdin = inPipe.fileHandleForWriting
     }
 
-    func send(_ text: String) throws {
+    func send(_ text: String, images: [ImageAttachment] = []) throws {
+        let content: Any
+        if images.isEmpty {
+            content = text
+        } else {
+            var blocks: [[String: Any]] = images.map { image in
+                ["type": "image", "source": [
+                    "type": "base64", "media_type": image.mediaType, "data": image.base64,
+                ]]
+            }
+            blocks.append(["type": "text", "text": text])
+            content = blocks
+        }
         try write([
             "type": "user",
-            "message": ["role": "user", "content": text],
+            "message": ["role": "user", "content": content],
         ])
     }
 

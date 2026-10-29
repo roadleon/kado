@@ -42,6 +42,7 @@ Kado runs on the [Claude Code](https://code.claude.com) you already have install
 | Close | `Esc` or `⌘W` |
 | Send / new line | `Return` / `Shift + Return` (Return while composing Japanese text confirms the text instead of sending) |
 | New chat | The pen button in the header, or `⌘N` |
+| Attach images | Paste with `⌘V`, drag and drop onto the chat, or click the capture button (camera icon) to capture part of the screen. Up to 4 images per question |
 | Stop an answer | The send button turns into a stop button while Kado answers |
 | Change model | Click the model name in the header (starts a new chat) |
 | Move the bubble | Drag it. Kado remembers where you put it |
@@ -49,6 +50,8 @@ Kado runs on the [Claude Code](https://code.claude.com) you already have install
 | Bubble hidden by mistake | Open Kado again from Spotlight or Finder |
 
 Questions that need current information are answered with a web search, followed by links to the sources. These take a few seconds to about 20 seconds.
+
+Large images are scaled down (longest side 1568 px) before they are sent; Claude would scale them down anyway, so answers don't suffer. Questions with images use more of your usage limits than text-only ones. The first time you use the capture button, macOS asks you to allow Screen Recording for Kado.
 
 If Kado stays closed and unused for 30 minutes, it stops Claude Code in the background to free memory (the next question starts a new chat).
 
