@@ -55,6 +55,12 @@ Questions that need current information are answered with a web search, followed
 
 Large images are scaled down (longest side 1568 px) before they are sent; Claude would scale them down anyway, so answers don't suffer. Questions with images use more of your usage limits than text-only ones. The first time you use the capture button, macOS asks you to allow Screen Recording for Kado.
 
+Kado is signed ad hoc, so macOS ties the Screen Recording permission to that exact build. After you update and rebuild Kado, the capture button may keep asking for permission even though Kado is turned on in System Settings. Reset the permission, then allow it again when Kado asks:
+
+```bash
+tccutil reset ScreenCapture io.github.roadleon.kado
+```
+
 If Kado stays closed and unused for 30 minutes, it stops Claude Code in the background to free memory (the next question starts a new chat).
 
 ### URL scheme
