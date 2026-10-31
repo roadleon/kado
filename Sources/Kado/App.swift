@@ -259,6 +259,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bubbleItem.state = Settings.bubbleVisible ? .on : .off
         menu.addItem(bubbleItem)
         menu.addItem(NSMenuItem(title: L10n.t("バブルを右下に戻す", "Reset Bubble Position"), action: #selector(resetBubble), keyEquivalent: ""))
+        if Settings.panelSize != nil {
+            menu.addItem(NSMenuItem(title: L10n.t("チャット窓を元の大きさに戻す", "Reset Chat Window Size"), action: #selector(resetPanelSize), keyEquivalent: ""))
+        }
 
         let loginItem = NSMenuItem(title: L10n.t("ログイン時に起動", "Launch at Login"), action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
@@ -278,6 +281,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func newConversation() {
         store.newConversation()
         if !panel.isVisible { showChat() }
+    }
+
+    @objc private func resetPanelSize() {
+        Settings.panelSize = nil
+        if panel.isVisible { panel.position(near: bubble.isVisible ? bubble.frame : nil) }
     }
 
     @objc private func selectModel(_ sender: NSMenuItem) {

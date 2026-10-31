@@ -33,6 +33,15 @@ enum ModelChoice: String, CaseIterable, Identifiable {
     }
 }
 
+/// 画面の文字の大きさ。標準を最小にして、大きめに切り替えられる
+enum TextSize: String {
+    case standard, large
+
+    var toggled: TextSize { self == .standard ? .large : .standard }
+
+    var typography: Typography { self == .standard ? .standard : .large }
+}
+
 enum Settings {
     private static let defaults = UserDefaults.standard
 
@@ -56,6 +65,26 @@ enum Settings {
                 defaults.set(NSStringFromPoint(p), forKey: "bubbleOrigin")
             } else {
                 defaults.removeObject(forKey: "bubbleOrigin")
+            }
+        }
+    }
+
+    static var textSize: TextSize {
+        get { TextSize(rawValue: defaults.string(forKey: "textSize") ?? "") ?? .standard }
+        set { defaults.set(newValue.rawValue, forKey: "textSize") }
+    }
+
+    /// チャット窓の大きさ。動かしていなければ nil（既定の大きさ）
+    static var panelSize: NSSize? {
+        get {
+            guard let s = defaults.string(forKey: "panelSize") else { return nil }
+            return NSSizeFromString(s)
+        }
+        set {
+            if let size = newValue {
+                defaults.set(NSStringFromSize(size), forKey: "panelSize")
+            } else {
+                defaults.removeObject(forKey: "panelSize")
             }
         }
     }

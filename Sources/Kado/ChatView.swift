@@ -15,7 +15,8 @@ struct ChatView: View {
             messageList
             inputArea
         }
-        .font(Theme.body)
+        .font(typography.body)
+        .environment(\.typography, typography)
         .background(VisualEffect())
         .clipShape(RoundedRectangle(cornerRadius: Theme.panelRadius, style: .continuous))
         .overlay(
@@ -60,6 +61,15 @@ struct ChatView: View {
 
             Spacer()
 
+            IconButton(
+                systemName: "textformat.size",
+                help: store.textSize == .large
+                    ? L10n.t("文字を標準の大きさに戻す", "Use standard text size")
+                    : L10n.t("文字を大きくする", "Use larger text"),
+                isOn: store.textSize == .large
+            ) {
+                store.toggleTextSize()
+            }
             IconButton(systemName: "square.and.pencil", help: L10n.t("新しい会話（⌘N）", "New Chat (⌘N)")) {
                 store.newConversation()
             }
@@ -109,12 +119,13 @@ struct ChatView: View {
             Text(L10n.t("ちょっとした質問をどうぞ", "What would you like to know?"))
                 .foregroundStyle(.secondary)
             Text(L10n.t("Enter で送信　Shift + Enter で改行　⌃⌥M で開閉", "Enter to send · Shift + Enter for a new line · ⌃⌥M to toggle"))
-                .font(Theme.bodySmall)
+                .font(typography.bodySmall)
                 .foregroundStyle(.tertiary)
             Text(L10n.t("画像は ⌘V・ドラッグ・撮影ボタンで添付できます", "Attach images with ⌘V, drag and drop, or the capture button"))
-                .font(Theme.bodySmall)
+                .font(typography.bodySmall)
                 .foregroundStyle(.tertiary)
         }
+        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
         .padding(.top, 150)
     }
@@ -125,7 +136,7 @@ struct ChatView: View {
         VStack(alignment: .leading, spacing: 4) {
             if let notice = store.notice {
                 Text(notice)
-                    .font(Theme.bodySmall)
+                    .font(typography.bodySmall)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 4)
             }
@@ -147,6 +158,7 @@ struct ChatView: View {
                         ChatInput(
                             text: $store.draft,
                             contentHeight: $inputContentHeight,
+                            fontSize: typography.bodySize,
                             focusTick: store.focusTick,
                             clearTick: store.clearTick,
                             onSubmit: { store.send() },
@@ -243,9 +255,12 @@ struct ChatView: View {
         store.draft.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var typography: Typography { store.textSize.typography }
+
     /// 折り返しを含めた行数に合わせて高くする（最大8行ほど。それを超えたら中でスクロール）
     private var inputHeight: CGFloat {
-        min(max(inputContentHeight, 23), 140)
+        let size = typography.bodySize
+        return min(max(inputContentHeight, size + 10), size / 13 * 140)
     }
 }
 
@@ -255,6 +270,7 @@ private struct MessageRow: View {
     let activity: String?
     var onCopy: (String) -> Void
     @State private var copied = false
+    @Environment(\.typography) private var typography
 
     var body: some View {
         switch message.role {
@@ -308,7 +324,7 @@ private struct MessageRow: View {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
                     } label: {
                         Label(copied ? L10n.t("コピーしました", "Copied") : L10n.t("回答をコピー", "Copy answer"), systemImage: copied ? "checkmark" : "doc.on.doc")
-                            .font(Theme.bodySmall)
+                            .font(typography.bodySmall)
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
@@ -322,6 +338,7 @@ private struct MessageRow: View {
 /// 回答を待つあいだの3つの点。検索中などは、その説明を添える
 private struct ThinkingDots: View {
     var label: String?
+    @Environment(\.typography) private var typography
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.35)) { context in
@@ -336,7 +353,7 @@ private struct ThinkingDots: View {
                 }
                 if let label {
                     Text(label)
-                        .font(Theme.bodySmall)
+                        .font(typography.bodySmall)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -348,6 +365,8 @@ private struct ThinkingDots: View {
 private struct IconButton: View {
     let systemName: String
     let help: String
+    /// 切り替え式のボタンが入っているとき、アクセント色にする
+    var isOn = false
     let action: () -> Void
     @State private var hovering = false
 
@@ -355,6 +374,8 @@ private struct IconButton: View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 12, weight: .medium))
+                // 日本語の環境では文字の記号が「ぁあ」に置き換わるので、英字の形に固定する
+                .environment(\.locale, Locale(identifier: "en"))
                 .frame(width: 24, height: 24)
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -363,7 +384,7 @@ private struct IconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(isOn ? AnyShapeStyle(Theme.accent) : AnyShapeStyle(.secondary))
         .onHover { hovering = $0 }
         .help(help)
     }

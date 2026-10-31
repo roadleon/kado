@@ -92,6 +92,7 @@ private struct TextBlockView: View {
 
 private struct LineView: View {
     let line: String
+    @Environment(\.typography) private var typography
 
     var body: some View {
         let indentCount = line.prefix { $0 == " " || $0 == "\t" }.count
@@ -102,7 +103,7 @@ private struct LineView: View {
             Color.clear.frame(height: 2)
         } else if let heading = Self.heading(content) {
             Text(inline(heading))
-                .font(Theme.heading)
+                .font(typography.heading)
                 .padding(.top, 4)
         } else if content == "---" || content == "***" || content == "___" {
             Divider().padding(.vertical, 4)
@@ -196,12 +197,13 @@ private struct CodeBlockView: View {
     let code: String
     var onCopy: (String) -> Void
     @State private var copied = false
+    @Environment(\.typography) private var typography
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(language.isEmpty ? "code" : language)
-                    .font(Theme.bodySmall)
+                    .font(typography.bodySmall)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
@@ -210,7 +212,7 @@ private struct CodeBlockView: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copied = false }
                 } label: {
                     Label(copied ? L10n.t("コピーしました", "Copied") : L10n.t("コピー", "Copy"), systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(Theme.bodySmall)
+                        .font(typography.bodySmall)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -222,7 +224,7 @@ private struct CodeBlockView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(code)
-                    .font(Theme.code)
+                    .font(typography.code)
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(10)
             }

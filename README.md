@@ -45,6 +45,8 @@ Kado runs on the [Claude Code](https://code.claude.com) you already have install
 | Attach images | Paste with `⌘V`, drag and drop onto the chat, or click the capture button (camera icon) to capture part of the screen. Up to 4 images per question |
 | Stop an answer | The send button turns into a stop button while Kado answers |
 | Change model | Click the model name in the header (starts a new chat) |
+| Resize the chat window | Drag any edge or corner. Kado remembers the size. To go back to the default size, choose **Reset Chat Window Size** from the menu |
+| Larger text | Click the **aA** button in the header. Click again for the standard size |
 | Move the bubble | Drag it. Kado remembers where you put it |
 | Menu (model, Launch at Login, Quit) | Right-click the bubble, or use the icon in the menu bar |
 | Bubble hidden by mistake | Open Kado again from Spotlight or Finder |

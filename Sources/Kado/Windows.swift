@@ -155,13 +155,18 @@ final class BubbleWindow: NSPanel {
 
 // MARK: - チャット窓
 
-final class ChatPanel: NSPanel {
+/// ほかのアプリを使っている最中でも、窓のボタンを1回のクリックで押せるようにする
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+final class ChatPanel: NSPanel, NSWindowDelegate {
     var onEscape: (() -> Void)?
 
     init(store: ChatStore, onClose: @escaping () -> Void) {
         super.init(
             contentRect: NSRect(origin: .zero, size: Theme.panelSize),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -175,14 +180,31 @@ final class ChatPanel: NSPanel {
         isReleasedWhenClosed = false
         onEscape = onClose
 
-        let hosting = NSHostingView(rootView: ChatView(store: store, onClose: onClose))
+        let hosting = FirstMouseHostingView(rootView: ChatView(store: store, onClose: onClose))
         hosting.sizingOptions = []
         hosting.frame = NSRect(origin: .zero, size: Theme.panelSize)
         contentView = hosting
+        delegate = self
+
+        // 縁をドラッグして変えた大きさを覚える
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.didEndLiveResizeNotification, object: self, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Settings.panelSize = self.frame.size
+        }
     }
 
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// 枠の無い窓では minSize が効かないので、縁のドラッグで縮めすぎないようここで止める
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        NSSize(
+            width: max(frameSize.width, Theme.panelMinSize.width),
+            height: max(frameSize.height, Theme.panelMinSize.height)
+        )
+    }
 
     override func cancelOperation(_ sender: Any?) {
         onEscape?()
@@ -190,10 +212,10 @@ final class ChatPanel: NSPanel {
 
     /// バブルのそばに開く。バブルが無いときは、マウスのある画面の右下に開く。
     func position(near bubble: NSRect?) {
-        let size = Theme.panelSize
         if let bubble {
             let screen = NSScreen.screens.first { $0.frame.intersects(bubble) } ?? NSScreen.main
             guard let visible = screen?.visibleFrame else { return }
+            let size = fittedSize(in: visible)
             let inner = bubble.insetBy(dx: Theme.bubbleMargin, dy: Theme.bubbleMargin)
             var x = inner.maxX - size.width
             var y = inner.maxY + Theme.gap
@@ -214,6 +236,7 @@ final class ChatPanel: NSPanel {
             let mouse = NSEvent.mouseLocation
             let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
             guard let visible = screen?.visibleFrame else { return }
+            let size = fittedSize(in: visible)
             setFrame(
                 NSRect(
                     x: visible.maxX - size.width - Theme.edgeInset,
@@ -224,5 +247,14 @@ final class ChatPanel: NSPanel {
                 display: true
             )
         }
+    }
+
+    /// 覚えた大きさ（無ければ既定の大きさ）を、画面に入る大きさに縮める
+    private func fittedSize(in visible: NSRect) -> NSSize {
+        let size = Settings.panelSize ?? Theme.panelSize
+        return NSSize(
+            width: min(max(size.width, Theme.panelMinSize.width), visible.width),
+            height: min(max(size.height, Theme.panelMinSize.height), visible.height)
+        )
     }
 }

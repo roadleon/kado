@@ -6,6 +6,7 @@ struct ChatInput: NSViewRepresentable {
     @Binding var text: String
     /// 折り返しを含めた、中身の高さ。入力欄の高さを決めるのに使う
     @Binding var contentHeight: CGFloat
+    var fontSize: CGFloat
     var focusTick: Int
     var clearTick: Int
     var onSubmit: () -> Void
@@ -22,7 +23,7 @@ struct ChatInput: NSViewRepresentable {
         textView.isRichText = false
         textView.importsGraphics = false
         textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: 13)
+        textView.font = .systemFont(ofSize: fontSize)
         textView.textColor = .labelColor
         textView.insertionPointColor = Theme.accentNS
         textView.drawsBackground = false
@@ -58,6 +59,10 @@ struct ChatInput: NSViewRepresentable {
         textView.onLayoutChange = { [weak coordinator = context.coordinator, weak textView] in
             guard let textView else { return }
             coordinator?.measure(textView)
+        }
+        if textView.font?.pointSize != fontSize {
+            textView.font = .systemFont(ofSize: fontSize)
+            context.coordinator.measure(textView)
         }
         if context.coordinator.lastClearTick != clearTick {
             context.coordinator.lastClearTick = clearTick

@@ -19,6 +19,7 @@ final class ChatStore: ObservableObject {
     /// 回答中に裏でしていること（「ウェブを検索しています」など）。文字が届き始めたら消す
     @Published private(set) var activity: String?
     @Published private(set) var model: ModelChoice = Settings.model
+    @Published private(set) var textSize: TextSize = Settings.textSize
     @Published var draft = ""
     @Published private(set) var pendingImages: [ImageAttachment] = []
     @Published private(set) var notice: String?
@@ -110,6 +111,11 @@ final class ChatStore: ObservableObject {
         model = choice
         Settings.model = choice
         newConversation()
+    }
+
+    func toggleTextSize() {
+        textSize = textSize.toggled
+        Settings.textSize = textSize
     }
 
     /// しばらく使っていないとき、claude を止めてメモリを空ける
